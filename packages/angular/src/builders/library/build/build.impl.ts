@@ -16,10 +16,11 @@ import {
   fileExists
 } from '@nrwl/workspace/src/utils/fileutils';
 import { join, resolve } from 'path';
-import { from, Observable } from 'rxjs';
-import { mapTo, switchMap, tap, map } from 'rxjs/operators';
+import { from, Observable, of } from 'rxjs';
+import { mapTo, switchMap, tap, map, concatMap } from 'rxjs/operators';
 import { JsonObject } from '@angular-devkit/core';
 import { checkProjectExists } from '@nrwl/workspace/src/schematics/move/lib/check-project-exists';
+import { stripIndents } from '@angular-devkit/core/src/utils/literals';
 
 export interface BuildAngularLibraryBuilderOptions {
   /**
@@ -36,7 +37,53 @@ export interface BuildAngularLibraryBuilderOptions {
   watch?: boolean;
 }
 
-async function initialize(
+type DependentLibraryNode = {
+  scope: string;
+  outputPath: string;
+  node: ProjectGraphNode;
+};
+
+/**
+ * It is a prerequisite that dependent libraries have been built before the parent
+ * library. This function checks that
+ * @param context
+ */
+function checkDependentLibrariesHaveBeenBuilt(context: BuilderContext) {
+  const projectDependencies = calculateLibraryDependencies(
+    context.target.project
+  );
+
+  const depLibsToBuildFirst: DependentLibraryNode[] = [];
+
+  // verify whether all dependent libraries have been built
+  projectDependencies.forEach(libDep => {
+    // check wether dependent library has been built => that's necessary
+    const packageJsonPath = join(
+      context.workspaceRoot,
+      'dist',
+      libDep.node.data.root,
+      'package.json'
+    );
+
+    if (!fileExists(packageJsonPath)) {
+      depLibsToBuildFirst.push(libDep);
+    }
+  });
+
+  if (depLibsToBuildFirst.length > 0) {
+    context.logger.error(stripIndents`
+      Some of the library ${
+        context.target.project
+      }'s dependencies have not been built yet. Please build these libraries before:
+      ${depLibsToBuildFirst.map(x => ` - ${x.scope}`).join('\n')}
+    `);
+    return { success: false };
+  } else {
+    return { success: true };
+  }
+}
+
+async function initializeNgPackagr(
   options: BuildAngularLibraryBuilderOptions & JsonObject,
   context: BuilderContext
 ): Promise<import('ng-packagr').NgPackagr> {
@@ -54,19 +101,6 @@ async function initialize(
     // update the tsconfig.lib.json => we only do this in memory
     // and pass it along to ng-packagr
     projectDependencies.forEach(libDep => {
-      // check wether dependent library has been built => that's necessary
-      const packageJsonPath = join(
-        context.workspaceRoot,
-        'dist',
-        libDep.node.data.root,
-        'package.json'
-      );
-      if (!fileExists(packageJsonPath)) {
-        throw new Error(
-          `Dependent library ${libDep.scope} has not been built. Please build that library before.`
-        );
-      }
-
       parsedTSConfig.options.paths[libDep.scope] = [
         libDep.outputPath,
         ...parsedTSConfig.options.paths[libDep.scope]
@@ -86,7 +120,7 @@ async function initialize(
  */
 function calculateLibraryDependencies(
   targetProj: string
-): { scope: string; outputPath: string; node: ProjectGraphNode }[] {
+): DependentLibraryNode[] {
   const projGraph = createProjectGraph();
 
   // TODO: use the function from PR: https://github.com/nrwl/nx/pull/2297
@@ -159,14 +193,25 @@ export function run(
   options: BuildAngularLibraryBuilderOptions & JsonObject,
   context: BuilderContext
 ): Observable<BuilderOutput> {
-  return from(initialize(options, context)).pipe(
-    switchMap(packager =>
-      options.watch ? packager.watch() : packager.build()
-    ),
-    tap(() => {
-      updatePackageJsonDependencies(context);
+  return of(checkDependentLibrariesHaveBeenBuilt(context)).pipe(
+    map(result => {
+      if (result.success) {
+        // we can do the build, so pass on to ng-packagr
+        return from(initializeNgPackagr(options, context)).pipe(
+          switchMap(packager =>
+            options.watch ? packager.watch() : packager.build()
+          ),
+          tap(() => {
+            updatePackageJsonDependencies(context);
+          }),
+          mapTo({ success: true })
+        );
+      } else {
+        // just pass on the result
+        return of(result);
+      }
     }),
-    mapTo({ success: true })
+    switchMap(result => result)
   );
 }
 

@@ -46,16 +46,18 @@ forEachCli('angular', cli => {
         );
       });
 
-      // TODO: activate this test
-      // it('should throw an error if the dependent library has not been built before building the parent lib', () => {
-      //   // build the child before
-      //   const parentLibOutput = runCLI(`build ${parentLib}`, {
-      //     silenceError: true
-      //   });
-      //   expect(parentLibOutput).toContain(
-      //     `Dependent library @proj/${childLib} has not been built. Please build that library before`
-      //   );
-      // });
+      it('should throw an error if the dependent library has not been built before building the parent lib', () => {
+        expect.assertions(2);
+
+        try {
+          runCLI(`build ${parentLib}`);
+        } catch (e) {
+          expect(e.stderr.toString()).toContain(
+            `Some of the library ${parentLib}'s dependencies have not been built yet. Please build these libraries before:`
+          );
+          expect(e.stderr.toString()).toContain(`@proj/${childLib}`);
+        }
+      });
 
       it('should properly build the parent lib referencing the child lib and update the package.json dependencies', () => {
         // build the child before
