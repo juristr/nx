@@ -26,3 +26,11 @@ Default: `false`
 Type: `boolean`
 
 Run build when files change.
+
+### withDeps
+
+Default: `false`
+
+Type: `boolean`
+
+Automatically build all the dependent libraries first
