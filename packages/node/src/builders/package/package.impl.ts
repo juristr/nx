@@ -4,15 +4,26 @@ import {
   createBuilder
 } from '@angular-devkit/architect';
 import { JsonObject } from '@angular-devkit/core';
-import { readJsonFile } from '@nrwl/workspace';
-import { writeJsonFile } from '@nrwl/workspace/src/utils/fileutils';
+import { readJsonFile, readTsConfig, deleteFile } from '@nrwl/workspace';
+import { writeJsonFile, fileExists } from '@nrwl/workspace/src/utils/fileutils';
 import { ChildProcess, fork } from 'child_process';
 import { copy, removeSync } from 'fs-extra';
 import * as glob from 'glob';
 import { basename, dirname, join, normalize, relative } from 'path';
-import { Observable, Subscriber } from 'rxjs';
+import { Observable, Subscriber, of } from 'rxjs';
 import { switchMap, tap, map } from 'rxjs/operators';
 import * as treeKill from 'tree-kill';
+import {
+  ProjectGraphNode,
+  ProjectType,
+  createProjectGraph,
+  ProjectGraphBuilder
+} from '@nrwl/workspace/src/core/project-graph';
+import * as ts from 'typescript';
+import { unlinkSync } from 'fs';
+
+// TODO: can I rely on this when using the code packages?
+import { stripIndents } from '@angular-devkit/core/src/utils/literals';
 
 export interface NodePackageBuilderOptions extends JsonObject {
   main: string;
@@ -39,6 +50,100 @@ type AssetGlob = FileInputOutput & {
   ignore: string[];
 };
 
+/**
+ * -----------------------------------------------------------
+ */
+
+type DependentLibraryNode = {
+  scope: string;
+  outputPath: string;
+  node: ProjectGraphNode;
+};
+
+/**
+ * Given a target library, uses the project dep graph to find all its dependencies
+ * and calculates the `scope` name and output path
+ * @param targetProj the target library to build
+ */
+export function calculateLibraryDependencies(
+  context: BuilderContext
+): DependentLibraryNode[] {
+  const targetProj = context.target.project;
+  const projGraph = createProjectGraph();
+
+  // TODO: use the function from PR: https://github.com/nrwl/nx/pull/2297
+  const hasArchitectBuildBuilder = (projectGraph: ProjectGraphNode): boolean =>
+    projectGraph.data.architect &&
+    projectGraph.data.architect.build &&
+    projectGraph.data.architect.build.builder !== '';
+
+  // gather the library dependencies
+  return (projGraph.dependencies[targetProj] || [])
+    .map(dependency => {
+      const depNode = projGraph.nodes[dependency.target];
+
+      if (
+        depNode.type === ProjectType.lib &&
+        hasArchitectBuildBuilder(depNode)
+      ) {
+        const libPackageJson = readJsonFile(
+          join(context.workspaceRoot, depNode.data.root, 'package.json')
+        );
+
+        return {
+          scope: libPackageJson.name, // i.e. @wrkspace/mylib
+          outputPath:
+            depNode.data.architect.build.options.outputPath ||
+            `dist/${depNode.data.root}`,
+          node: depNode
+        };
+      } else {
+        return null;
+      }
+    })
+    .filter(x => !!x);
+}
+
+function checkDependentLibrariesHaveBeenBuilt(
+  context: BuilderContext,
+  projectDependencies: DependentLibraryNode[]
+) {
+  const depLibsToBuildFirst: DependentLibraryNode[] = [];
+
+  // verify whether all dependent libraries have been built
+  projectDependencies.forEach(libDep => {
+    // check wether dependent library has been built => that's necessary
+
+    // TODO: what about the outputPath?
+    const packageJsonPath = join(
+      context.workspaceRoot,
+      'dist',
+      libDep.node.data.root,
+      'package.json'
+    );
+
+    if (!fileExists(packageJsonPath)) {
+      depLibsToBuildFirst.push(libDep);
+    }
+  });
+
+  if (depLibsToBuildFirst.length > 0) {
+    context.logger.error(stripIndents`
+      Some of the library ${
+        context.target.project
+      }'s dependencies have not been built yet. Please build these libraries before:
+      ${depLibsToBuildFirst.map(x => ` - ${x.scope}`).join('\n')}
+    `);
+    return { success: false };
+  } else {
+    return { success: true };
+  }
+}
+
+/**
+ * -----------------------------------------------------------
+ */
+
 export default createBuilder(runNodePackageBuilder);
 
 export function runNodePackageBuilder(
@@ -46,18 +151,34 @@ export function runNodePackageBuilder(
   context: BuilderContext
 ) {
   const normalizedOptions = normalizeOptions(options, context);
-  return compileTypeScriptFiles(normalizedOptions, context).pipe(
-    tap(() => {
-      updatePackageJson(normalizedOptions, context);
-    }),
-    switchMap(() => {
-      return copyAssetFiles(normalizedOptions, context);
-    }),
-    map(value => {
-      return {
-        ...value,
-        outputPath: normalizedOptions.outputPath
-      };
+  const libDependencies = calculateLibraryDependencies(context);
+
+  return of(
+    checkDependentLibrariesHaveBeenBuilt(context, libDependencies)
+  ).pipe(
+    switchMap(result => {
+      if (result.success) {
+        return compileTypeScriptFiles(
+          normalizedOptions,
+          context,
+          libDependencies
+        ).pipe(
+          tap(() => {
+            updatePackageJson(normalizedOptions, context, libDependencies);
+          }),
+          switchMap(() => {
+            return copyAssetFiles(normalizedOptions, context);
+          }),
+          map(value => {
+            return {
+              ...value,
+              outputPath: normalizedOptions.outputPath
+            };
+          })
+        );
+      } else {
+        return of(result);
+      }
     })
   );
 }
@@ -124,7 +245,8 @@ function normalizeOptions(
 let tscProcess: ChildProcess;
 function compileTypeScriptFiles(
   options: NormalizedBuilderOptions,
-  context: BuilderContext
+  context: BuilderContext,
+  projectDependencies: DependentLibraryNode[]
 ): Observable<BuilderOutput> {
   if (tscProcess) {
     killProcess(context);
@@ -133,6 +255,44 @@ function compileTypeScriptFiles(
   removeSync(options.normalizedOutputPath);
 
   return Observable.create((subscriber: Subscriber<BuilderOutput>) => {
+    debugger;
+    let tsConfigPath = join(context.workspaceRoot, options.tsConfig);
+    // const outputPath = join(context.workspaceRoot, options.outputPath);
+
+    if (projectDependencies.length > 0) {
+      // const parsedTSConfig = readTsConfig(tsConfigPath);
+      const parsedTSConfig = ts.readConfigFile(tsConfigPath, ts.sys.readFile)
+        .config;
+
+      // update TSConfig paths to point to the dist folder
+      projectDependencies.forEach(libDep => {
+        parsedTSConfig.compilerOptions = parsedTSConfig.compilerOptions || {};
+        parsedTSConfig.compilerOptions.paths =
+          parsedTSConfig.compilerOptions.paths || {};
+
+        const currentPaths =
+          parsedTSConfig.compilerOptions.paths[libDep.scope] || [];
+        parsedTSConfig.compilerOptions.paths[libDep.scope] = [
+          libDep.outputPath,
+          ...currentPaths
+        ];
+      });
+
+      // find the library root folder
+      const projGraph = createProjectGraph();
+      const libRoot = projGraph.nodes[context.target.project].data.root;
+
+      // write the tmp tsconfig needed for building
+      const tmpTsConfigPath = join(
+        context.workspaceRoot,
+        libRoot,
+        'tsconfig.lib.tmp'
+      );
+      writeJsonFile(tmpTsConfigPath, parsedTSConfig);
+
+      tsConfigPath = tmpTsConfigPath;
+    }
+
     try {
       let args = [
         '-p',
@@ -161,6 +321,8 @@ function compileTypeScriptFiles(
           if (code === 0) {
             context.logger.info('Done compiling TypeScript files.');
             subscriber.next({ success: true });
+
+            cleanupTmpTsConfigFile(tsConfigPath);
           } else {
             subscriber.error('Could not compile Typescript files');
           }
@@ -168,6 +330,8 @@ function compileTypeScriptFiles(
         });
       }
     } catch (error) {
+      cleanupTmpTsConfigFile(tsConfigPath);
+
       if (tscProcess) {
         killProcess(context);
       }
@@ -176,6 +340,12 @@ function compileTypeScriptFiles(
       );
     }
   });
+}
+
+function cleanupTmpTsConfigFile(tsConfigPath) {
+  if (tsConfigPath.indexOf('.tmp') > -1) {
+    unlinkSync(tsConfigPath);
+  }
 }
 
 function killProcess(context: BuilderContext): void {
@@ -194,7 +364,8 @@ function killProcess(context: BuilderContext): void {
 
 function updatePackageJson(
   options: NormalizedBuilderOptions,
-  context: BuilderContext
+  context: BuilderContext,
+  libDependencies: DependentLibraryNode[]
 ) {
   const mainFile = basename(options.main, '.ts');
   const typingsFile = `${mainFile}.d.ts`;
@@ -209,6 +380,24 @@ function updatePackageJson(
   packageJson.typings = normalize(
     `./${options.relativeMainFileOutput}/${typingsFile}`
   );
+
+  // add any dependency to the dependencies section
+  packageJson.dependencies = packageJson.dependencies || {};
+
+  libDependencies.forEach(entry => {
+    if (!packageJson.dependencies[entry.scope]) {
+      // read the lib version (should we read the one from the dist?)
+      const packageJsonPath = join(
+        context.workspaceRoot,
+        entry.node.data.root,
+        'package.json'
+      );
+      const depNodePackageJson = readJsonFile(packageJsonPath);
+
+      packageJson.dependencies[entry.scope] = depNodePackageJson.version;
+    }
+  });
+
   writeJsonFile(`${options.outputPath}/package.json`, packageJson);
 }
 
