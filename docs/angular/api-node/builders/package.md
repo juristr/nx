@@ -51,3 +51,11 @@ Default: `false`
 Type: `boolean`
 
 Enable re-building when files change.
+
+### withDeps
+
+Default: `false`
+
+Type: `boolean`
+
+Automatically build all the dependent libraries first

@@ -3,6 +3,11 @@ import { EventEmitter } from 'events';
 import { join } from 'path';
 import { getMockContext, getTestArchitect } from '../../utils/testing';
 import { MockBuilderContext } from '@nrwl/workspace/testing';
+import {
+  ProjectGraph,
+  ProjectType
+} from '@nrwl/workspace/src/core/project-graph';
+import * as projectGraphUtils from '@nrwl/workspace/src/core/project-graph';
 
 import {
   NodePackageBuilderOptions,
@@ -63,6 +68,14 @@ describe('NodeCompileBuilder', () => {
       watch: false,
       sourceMap: false
     };
+
+    // mock createProjectGraph
+    spyOn(projectGraphUtils, 'createProjectGraph').and.callFake(() => {
+      return {
+        nodes: {},
+        dependencies: {}
+      } as ProjectGraph;
+    });
   });
 
   it('should call tsc to compile', done => {

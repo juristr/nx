@@ -10,7 +10,7 @@ import { ChildProcess, fork } from 'child_process';
 import { copy, removeSync } from 'fs-extra';
 import * as glob from 'glob';
 import { basename, dirname, join, normalize, relative } from 'path';
-import { Observable, Subscriber, of } from 'rxjs';
+import { Observable, Subscriber, from, of } from 'rxjs';
 import { switchMap, tap, map } from 'rxjs/operators';
 import * as treeKill from 'tree-kill';
 import {
@@ -33,6 +33,7 @@ export interface NodePackageBuilderOptions extends JsonObject {
   sourceMap: boolean;
   assets: Array<AssetGlob | string>;
   packageJson: string;
+  withDeps?: boolean;
 }
 
 interface NormalizedBuilderOptions extends NodePackageBuilderOptions {
@@ -140,6 +141,41 @@ function checkDependentLibrariesHaveBeenBuilt(
   }
 }
 
+async function scheduleLibraryBuilds(
+  options: NodePackageBuilderOptions,
+  context: BuilderContext,
+  builds: DependentLibraryNode[]
+) {
+  let allBuildsSuccess = true;
+
+  for (const b of builds) {
+    // schedule a build
+    const buildRun = await context.scheduleTarget(
+      {
+        project: b.node.name,
+        target: 'build'
+      },
+      {
+        // overwrite the withDeps prop as we probably want to pass that along to
+        // child builds as well. otherwise it would be weird
+        withDeps: options.withDeps
+      }
+    );
+
+    // wait for the result
+    const result = await buildRun.result;
+
+    if (result.success === false) {
+      allBuildsSuccess = false;
+
+      // stop building other libs or 🤔 could we continue in some cases?
+      break;
+    }
+  }
+
+  return { success: allBuildsSuccess };
+}
+
 /**
  * -----------------------------------------------------------
  */
@@ -150,14 +186,37 @@ export function runNodePackageBuilder(
   options: NodePackageBuilderOptions,
   context: BuilderContext
 ) {
-  const normalizedOptions = normalizeOptions(options, context);
   const libDependencies = calculateLibraryDependencies(context);
-
-  return of(
-    checkDependentLibrariesHaveBeenBuilt(context, libDependencies)
-  ).pipe(
+  return of(true).pipe(
+    switchMap(() => {
+      if (options.withDeps === true && options.watch === true) {
+        context.logger.error(
+          'Using --withDeps in combination with --watch is not supported'
+        );
+        // not allowed combination
+        return of({ success: false });
+      } else {
+        return of({ success: true });
+      }
+    }),
+    // determine whether to build dependencies based on the options
+    switchMap(result => {
+      if (result.success && options.withDeps === true) {
+        return from(scheduleLibraryBuilds(options, context, libDependencies));
+      } else {
+        return of(result);
+      }
+    }),
+    map(result => {
+      if (result.success) {
+        return checkDependentLibrariesHaveBeenBuilt(context, libDependencies);
+      } else {
+        return result;
+      }
+    }),
     switchMap(result => {
       if (result.success) {
+        const normalizedOptions = normalizeOptions(options, context);
         return compileTypeScriptFiles(
           normalizedOptions,
           context,
@@ -315,11 +374,15 @@ function compileTypeScriptFiles(
         tscProcess = fork(tscPath, args, { stdio: [0, 1, 2, 'ipc'] });
         subscriber.next({ success: true });
       } else {
-        context.logger.info('Compiling TypeScript files...');
+        context.logger.info(
+          'Compiling TypeScript files for library  ${context.target.project}...'
+        );
         tscProcess = fork(tscPath, args, { stdio: [0, 1, 2, 'ipc'] });
         tscProcess.on('exit', code => {
           if (code === 0) {
-            context.logger.info('Done compiling TypeScript files.');
+            context.logger.info(
+              `Done compiling TypeScript files for library ${context.target.project}`
+            );
             subscriber.next({ success: true });
 
             cleanupTmpTsConfigFile(tsConfigPath);
@@ -383,7 +446,6 @@ function updatePackageJson(
 
   // add any dependency to the dependencies section
   packageJson.dependencies = packageJson.dependencies || {};
-
   libDependencies.forEach(entry => {
     if (!packageJson.dependencies[entry.scope]) {
       // read the lib version (should we read the one from the dist?)
@@ -397,6 +459,11 @@ function updatePackageJson(
       packageJson.dependencies[entry.scope] = depNodePackageJson.version;
     }
   });
+
+  // avoid adding empty dependencies
+  if (Object.keys(packageJson.dependencies).length === 0) {
+    delete packageJson.dependencies;
+  }
 
   writeJsonFile(`${options.outputPath}/package.json`, packageJson);
 }

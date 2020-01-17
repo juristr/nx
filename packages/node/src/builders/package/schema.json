@@ -20,6 +20,11 @@
       "description": "Enable re-building when files change.",
       "default": false
     },
+    "withDeps": {
+      "type": "boolean",
+      "description": "Automatically build all the dependent libraries first",
+      "default": false
+    },
     "sourceMap": {
       "type": "boolean",
       "description": "Output sourcemaps.",
