@@ -70,6 +70,8 @@ function checkDependentLibrariesHaveBeenBuilt(
         context.target.project
       }'s dependencies have not been built yet. Please build these libraries before:
       ${depLibsToBuildFirst.map(x => ` - ${x.scope}`).join('\n')}
+
+      Try: nx run-many --target build --projects ${context.target.project},...
     `);
     return { success: false };
   } else {

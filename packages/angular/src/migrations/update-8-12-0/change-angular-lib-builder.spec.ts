@@ -21,7 +21,7 @@ describe('Update Angular library builder', () => {
     );
   });
 
-  it('should overwrite the usual builder with @nrwl/angular:library-build', async () => {
+  it('should overwrite the usual builder with @nrwl/angular:package', async () => {
     tree.create(
       'workspace.json',
       JSON.stringify({
@@ -56,11 +56,11 @@ describe('Update Angular library builder', () => {
 
     const config = readWorkspace(tree);
     expect(config.projects['buildable-lib'].architect.build.builder).toBe(
-      '@nrwl/angular:library-build'
+      '@nrwl/angular:package'
     );
     expect(
       config.projects['anotherbuildable-lib'].architect.build.builder
-    ).toBe('@nrwl/angular:library-build');
+    ).toBe('@nrwl/angular:package');
     expect(
       config.projects['nonbuildable-lib'].architect.build
     ).not.toBeDefined();

@@ -342,7 +342,7 @@ function updateProject(options: NormalizedSchema): Rule {
           delete fixedProject.architect.build;
         } else {
           // adjust the builder path to our custom one
-          fixedProject.architect.build.builder = '@nrwl/angular:library-build';
+          fixedProject.architect.build.builder = '@nrwl/angular:package';
         }
 
         delete fixedProject.architect.test;

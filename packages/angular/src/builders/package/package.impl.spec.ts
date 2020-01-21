@@ -1,7 +1,7 @@
 import { JsonObject } from '@angular-devkit/core';
 import { MockBuilderContext } from '@nrwl/workspace/testing';
-import { BuildAngularLibraryBuilderOptions, run } from './build.impl';
-import { getMockContext } from '../../../utils/testing';
+import { BuildAngularLibraryBuilderOptions, run } from './package.impl';
+import { getMockContext } from '../../utils/testing';
 import * as projectGraphUtils from '@nrwl/workspace/src/core/project-graph';
 import * as workspaceUtils from '@nrwl/workspace';
 import {

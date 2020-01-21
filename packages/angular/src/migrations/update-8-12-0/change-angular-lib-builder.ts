@@ -19,7 +19,7 @@ export default function(): Rule {
             '@angular-devkit/build-ng-packagr:build'
         ) {
           config.projects[name].architect.build.builder =
-            '@nrwl/angular:library-build';
+            '@nrwl/angular:package';
         }
       });
       return config;
