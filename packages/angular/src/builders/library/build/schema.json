@@ -16,11 +16,6 @@
       "type": "boolean",
       "description": "Run build when files change.",
       "default": false
-    },
-    "withDeps": {
-      "type": "boolean",
-      "description": "Automatically build all the dependent libraries first",
-      "default": false
     }
   },
   "additionalProperties": false,

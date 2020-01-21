@@ -30,11 +30,6 @@ export interface BuildAngularLibraryBuilderOptions {
    * Run build when files change.
    */
   watch?: boolean;
-
-  /**
-   * Automatically build all the dependent libraries first
-   */
-  withDeps?: boolean;
 }
 
 type DependentLibraryNode = {
@@ -121,7 +116,6 @@ export function calculateLibraryDependencies(
   const targetProj = context.target.project;
   const projGraph = createProjectGraph();
 
-  // TODO: use the function from PR: https://github.com/nrwl/nx/pull/2297
   const hasArchitectBuildBuilder = (projectGraph: ProjectGraphNode): boolean =>
     projectGraph.data.architect &&
     projectGraph.data.architect.build &&
@@ -192,128 +186,27 @@ function updatePackageJsonDependencies(
   }
 }
 
-async function scheduleLibraryBuilds(
-  options: BuildAngularLibraryBuilderOptions & JsonObject,
-  context: BuilderContext,
-  builds: DependentLibraryNode[]
-) {
-  let allBuildsSuccess = true;
-
-  for (const b of builds) {
-    // schedule a build
-    const buildRun = await context.scheduleTarget(
-      {
-        project: b.node.name,
-        target: 'build'
-      },
-      {
-        // overwrite the withDeps prop as we probably want to pass that along to
-        // child builds as well. otherwise it would be weird
-        withDeps: options.withDeps
-      }
-    );
-
-    // wait for the result
-    const result = await buildRun.result;
-
-    if (result.success === false) {
-      allBuildsSuccess = false;
-
-      // stop building other libs or 🤔 could we continue in some cases?
-      break;
-    }
-  }
-
-  return { success: allBuildsSuccess };
-}
-
 export function run(
   options: BuildAngularLibraryBuilderOptions & JsonObject,
   context: BuilderContext
 ): Observable<BuilderOutput> {
-  return of({
-    options,
-    context,
-    dependencies: calculateLibraryDependencies(context),
-    result: { success: true }
-  }).pipe(
-    // verify param combination
-    switchMap(buildProps => {
-      if (
-        buildProps.options.withDeps === true &&
-        buildProps.options.watch === true
-      ) {
-        buildProps.context.logger.error(
-          'Using --withDeps in combination with --watch is not supported'
-        );
-        // not allowed combination
-        return of({
-          ...buildProps,
-          result: { success: false }
-        });
-      } else {
-        return of(buildProps);
-      }
-    }),
-    // determine whether to build dependencies based on the options
-    switchMap(buildProps => {
-      if (buildProps.result.success && buildProps.options.withDeps === true) {
-        return from(
-          scheduleLibraryBuilds(
-            buildProps.options,
-            buildProps.context,
-            buildProps.dependencies
-          )
-        ).pipe(
-          map(result => ({
-            ...buildProps,
-            result: result
-          }))
-        );
-      } else {
-        return of(buildProps);
-      }
-    }),
-    // check whether dependent libraries have been built (esp usefule if --withDeps has not been used)
-    switchMap(buildProps => {
-      if (buildProps.result.success) {
-        return of({
-          ...buildProps,
-          result: {
-            ...checkDependentLibrariesHaveBeenBuilt(
-              buildProps.context,
-              buildProps.dependencies
-            )
-          }
-        });
-      } else {
-        return of(buildProps);
-      }
-    }),
-    // build the package
-    switchMap(buildProps => {
-      if (buildProps.result.success) {
-        return from(
-          initializeNgPackagr(
-            buildProps.options,
-            buildProps.context,
-            buildProps.dependencies
-          )
-        ).pipe(
+  const dependencies = calculateLibraryDependencies(context);
+
+  return of(checkDependentLibrariesHaveBeenBuilt(context, dependencies)).pipe(
+    switchMap(result => {
+      if (result.success) {
+        return from(initializeNgPackagr(options, context, dependencies)).pipe(
           switchMap(packager =>
             options.watch ? packager.watch() : packager.build()
           ),
           tap(() => {
-            updatePackageJsonDependencies(
-              buildProps.context,
-              buildProps.dependencies
-            );
+            updatePackageJsonDependencies(context, dependencies);
           }),
           mapTo({ success: true })
         );
       } else {
         // just pass on the result
-        return of({ success: buildProps.result.success });
+        return of(result);
       }
     })
   );

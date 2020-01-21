@@ -10,33 +10,26 @@ import {
 
 forEachCli('angular', cli => {
   describe('Build Library', () => {
-    const workspace: string = cli === 'angular' ? 'angular' : 'workspace';
-
     describe('Build Angular library', () => {
       /**
        * Graph:
-       *                               childChildLib
-       *                             /
-       *                 childLib =>
-       *               /             \
-       * parentLib =>                 \
-       *               \                childLibShared
-       *                \             /
-       *                 childLib2 =>
+       *
+       *                 childLib
+       *               /
+       * parentLib =>
+       *               \
+       *                \
+       *                 childLib2
        *
        */
       let parentLib: string;
       let childLib: string;
-      let childChildLib: string;
       let childLib2: string;
-      let childLibShared: string;
 
       beforeEach(() => {
         parentLib = uniq('parentlib');
         childLib = uniq('childlib');
-        childChildLib = uniq('childchildlib');
         childLib2 = uniq('childlib2');
-        childLibShared = uniq('childlibshared');
 
         ensureProject();
 
@@ -48,12 +41,6 @@ forEachCli('angular', cli => {
         );
         runCLI(
           `generate @nrwl/angular:library ${childLib2} --publishable=true --no-interactive`
-        );
-        runCLI(
-          `generate @nrwl/angular:library ${childChildLib} --publishable=true --no-interactive`
-        );
-        runCLI(
-          `generate @nrwl/angular:library ${childLibShared} --publishable=true --no-interactive`
         );
 
         // create dependencies by importing
@@ -84,8 +71,6 @@ forEachCli('angular', cli => {
         debugger;
 
         createDep(parentLib, [childLib, childLib2]);
-        createDep(childLib, [childChildLib, childLibShared]);
-        createDep(childLib2, [childLibShared]);
       });
 
       it('should throw an error if the dependent library has not been built before building the parent lib', () => {
@@ -101,16 +86,21 @@ forEachCli('angular', cli => {
         }
       });
 
-      it('should automatically build all deps and update package.json when passing --withDeps flags', () => {
-        const parentLibOutput = runCLI(`build ${parentLib} --withDeps`);
-
-        expect(parentLibOutput).toContain(`Built @proj/${parentLib}`);
+      it('should build the library when it does not have any deps', () => {
+        const parentLibOutput = runCLI(`build ${childLib} --withDeps`);
         expect(parentLibOutput).toContain(`Built @proj/${childLib}`);
-        expect(parentLibOutput).toContain(`Built @proj/${childChildLib}`);
-        expect(parentLibOutput).toContain(`Built @proj/${childLib2}`);
-        expect(parentLibOutput).toContain(`Built @proj/${childLibShared}`);
+      });
 
-        //   // assert package.json deps have been set
+      it('should properly add references to any dependency into the parent package.json', () => {
+        const childLibOutput = runCLI(`build ${childLib}`);
+        const childLib2Output = runCLI(`build ${childLib2}`);
+        const parentLibOutput = runCLI(`build ${parentLib}`);
+
+        expect(childLibOutput).toContain(`Built @proj/${childLib}`);
+        expect(childLib2Output).toContain(`Built @proj/${childLib2}`);
+        expect(parentLibOutput).toContain(`Built @proj/${parentLib}`);
+
+        // assert package.json deps have been set
         const assertPackageJson = (
           parent: string,
           lib: string,
@@ -122,9 +112,7 @@ forEachCli('angular', cli => {
         };
 
         assertPackageJson(parentLib, childLib, '0.0.1');
-        assertPackageJson(childLib, childChildLib, '0.0.1');
-        assertPackageJson(childLib, childLibShared, '0.0.1');
-        assertPackageJson(childLib2, childLibShared, '0.0.1');
+        assertPackageJson(parentLib, childLib2, '0.0.1');
       });
     });
   });

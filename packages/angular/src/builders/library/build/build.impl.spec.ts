@@ -67,35 +67,6 @@ describe('AngularLibraryWebBuildBuilder', () => {
     };
   });
 
-  it('should not allow using --withDeps & --watch flags', async () => {
-    spyOn(projectGraphUtils, 'createProjectGraph').and.callFake(() => {
-      return {
-        nodes: {
-          'buildable-parent': {
-            type: ProjectType.lib,
-            name: 'buildable-parent',
-            data: { files: [], root: 'libs/buildable-parent' }
-          }
-        },
-        dependencies: {
-          'buildable-parent': []
-        }
-      } as ProjectGraph;
-    });
-
-    testOptions = {
-      ...testOptions,
-      withDeps: true,
-      watch: true
-    };
-
-    // act
-    const result = await run(testOptions, context).toPromise();
-
-    // assert
-    expect(result.success).toBeFalsy();
-  });
-
   it('should invoke ng-packagr for a libary without any dependencies', async () => {
     spyOn(projectGraphUtils, 'createProjectGraph').and.callFake(() => {
       return {
@@ -107,29 +78,6 @@ describe('AngularLibraryWebBuildBuilder', () => {
           }
         },
         dependencies: {}
-      } as ProjectGraph;
-    });
-
-    // act
-    const result = await run(testOptions, context).toPromise();
-
-    expect(result.success).toBeTruthy();
-    expect(ngPackagrMock.build).toHaveBeenCalled();
-  });
-
-  it('should properly invoke ng-packagr when building a normal package without dependencies', async () => {
-    spyOn(projectGraphUtils, 'createProjectGraph').and.callFake(() => {
-      return {
-        nodes: {
-          'buildable-parent': {
-            type: ProjectType.lib,
-            name: 'buildable-parent',
-            data: { files: [], root: 'libs/buildable-parent' }
-          }
-        },
-        dependencies: {
-          'buildable-parent': []
-        }
       } as ProjectGraph;
     });
 
