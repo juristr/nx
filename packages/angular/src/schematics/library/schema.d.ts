@@ -8,6 +8,7 @@ export interface Schema {
   directory?: string;
   sourceDir?: string;
   publishable: boolean;
+  importPath?: string;
 
   spec?: boolean;
   flat?: boolean;

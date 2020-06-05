@@ -104,6 +104,10 @@
       "enum": ["karma", "jest", "none"],
       "description": "Test runner to use for unit tests",
       "default": "jest"
+    },
+    "importPath": {
+      "type": "string",
+      "description": "The library name used to import it, like @myorg/my-awesome-lib"
     }
   },
   "required": []

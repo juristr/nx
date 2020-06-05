@@ -15,12 +15,17 @@ import { updateLibPackageNpmScope } from './lib/update-lib-package-npm-scope';
 import { updateProject } from './lib/update-project';
 import { updateTsConfig } from './lib/update-tsconfig';
 import { Schema } from './schema';
+import { validateNpmPackageName } from '@nrwl/workspace/src/utils/validate-npm-pkg-name';
 
 export default function (schema: Schema): Rule {
   return (host: Tree): Rule => {
     const options = normalizeOptions(host, schema);
     if (!options.routing && options.lazy) {
       throw new Error(`routing must be set`);
+    }
+
+    if (options.publishable === true) {
+      validateNpmPackageName(options.importPath);
     }
 
     return chain([

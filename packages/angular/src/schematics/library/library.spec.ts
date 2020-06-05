@@ -470,6 +470,21 @@ describe('lib', () => {
       ).toBeUndefined();
     });
 
+    it('should use an npm friendly name in tsconfig.json when publishable', async () => {
+      const tree = await runSchematic(
+        'lib',
+        { name: 'myLib', directory: 'myDir', publishable: true },
+        appTree
+      );
+      const tsconfigJson = readJsonInTree(tree, '/tsconfig.json');
+      expect(
+        tsconfigJson.compilerOptions.paths['@proj/my-dir-my-lib']
+      ).toEqual(['libs/my-dir/my-lib/src/index.ts']);
+      expect(
+        tsconfigJson.compilerOptions.paths['my-dir-my-lib/*']
+      ).toBeUndefined();
+    });
+
     it('should update tsconfig.json (no existing path mappings)', async () => {
       const updatedTree: any = updateJsonInTree('tsconfig.json', (json) => {
         json.compilerOptions.paths = undefined;
@@ -1005,6 +1020,83 @@ describe('lib', () => {
       expect(
         workspaceJson.projects['my-lib'].architect.lint.options.tsConfig
       ).toEqual(['libs/my-lib/tsconfig.lib.json']);
+    });
+  });
+
+  describe('--importPath', () => {
+    it('should update the package.json & tsconfig with the given import path', async () => {
+      const tree = await runSchematic(
+        'lib',
+        {
+          name: 'myLib',
+          framework: 'angular',
+          publishable: true,
+          directory: 'myDir',
+          importPath: '@myorg/lib',
+        },
+        appTree
+      );
+      const packageJson = readJsonInTree(
+        tree,
+        'libs/my-dir/my-lib/package.json'
+      );
+      const tsconfigJson = readJsonInTree(tree, '/tsconfig.json');
+
+      expect(packageJson.name).toBe('@myorg/lib');
+      expect(
+        tsconfigJson.compilerOptions.paths[packageJson.name]
+      ).toBeDefined();
+    });
+
+    it('should fail if the same importPath has already been used', async () => {
+      const tree1 = await runSchematic(
+        'lib',
+        {
+          name: 'myLib1',
+          framework: 'angular',
+          publishable: true,
+          importPath: '@myorg/lib',
+        },
+        appTree
+      );
+
+      try {
+        await runSchematic(
+          'lib',
+          {
+            name: 'myLib2',
+            framework: 'angular',
+            publishable: true,
+            importPath: '@myorg/lib',
+          },
+          tree1
+        );
+      } catch (e) {
+        expect(e.message).toContain(
+          'You already have a library using the import path'
+        );
+      }
+
+      expect.assertions(1);
+    });
+
+    it('should fail if we pass an invalid npm package name', async () => {
+      try {
+        await runSchematic(
+          'lib',
+          {
+            name: 'myLib',
+            framework: 'angular',
+            publishable: true,
+            importPath: '@myorg/shop/mylib',
+          },
+          appTree
+        );
+      } catch (e) {
+        expect(e.message).toContain('scoped package name has an extra');
+      }
+
+      expect.assertions(1);
     });
   });
 });

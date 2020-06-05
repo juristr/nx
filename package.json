@@ -252,6 +252,7 @@
     }
   },
   "dependencies": {
-    "@nrwl/nx-cloud": "^9.3.2"
+    "@nrwl/nx-cloud": "^9.3.2",
+    "speakingurl": "^14.0.1"
   }
 }

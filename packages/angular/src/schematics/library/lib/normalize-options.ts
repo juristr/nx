@@ -1,6 +1,6 @@
 import { Tree } from '@angular-devkit/schematics';
-import { getNpmScope, toClassName, toFileName } from '@nrwl/workspace';
-import { libsDir } from '@nrwl/workspace/src/utils/ast-utils';
+import { getNpmScope, toClassName, toFileName, NxJson } from '@nrwl/workspace';
+import { libsDir, readJsonInTree } from '@nrwl/workspace/src/utils/ast-utils';
 import { Schema } from '../schema';
 import { NormalizedSchema } from './normalized-schema';
 
@@ -24,6 +24,15 @@ export function normalizeOptions(
   const modulePath = `${projectRoot}/src/lib/${fileName}.module.ts`;
   const defaultPrefix = getNpmScope(host);
 
+  // adjust the import path, especially for publishable
+  // libs which need to respect the NPM package scoping rules
+  let importPath = options.importPath;
+  if (!importPath) {
+    importPath = options.publishable
+      ? `@${defaultPrefix}/${projectName}`
+      : `@${defaultPrefix}/${projectDirectory}`;
+  }
+
   return {
     ...options,
     prefix: options.prefix ? options.prefix : defaultPrefix,
@@ -35,5 +44,6 @@ export function normalizeOptions(
     modulePath,
     parsedTags,
     fileName,
+    importPath,
   };
 }
