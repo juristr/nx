@@ -16,5 +16,6 @@ export interface Schema {
   linter: Linter;
   component?: boolean;
   publishable?: boolean;
+  importPath?: string;
   js?: boolean;
 }

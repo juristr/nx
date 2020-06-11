@@ -9,6 +9,7 @@ import {
   noop,
   Rule,
   SchematicContext,
+  SchematicsException,
   template,
   Tree,
   url,
@@ -50,6 +51,7 @@ import {
 import { Schema } from './schema';
 import { libsDir } from '@nrwl/workspace/src/utils/ast-utils';
 import { initRootBabelConfig } from '@nrwl/web/src/utils/rules';
+import { validateNpmPackageName } from '@nrwl/workspace/src/utils/validate-npm-pkg-name';
 
 export interface NormalizedSchema extends Schema {
   name: string;
@@ -65,6 +67,10 @@ export interface NormalizedSchema extends Schema {
 export default function (schema: Schema): Rule {
   return (host: Tree, context: SchematicContext) => {
     const options = normalizeOptions(host, schema);
+
+    if (options.publishable === true) {
+      validateNpmPackageName(options.importPath);
+    }
 
     if (!options.component) {
       options.style = 'none';
@@ -179,12 +185,26 @@ function updateTsConfig(options: NormalizedSchema): Rule {
         const c = json.compilerOptions;
         c.paths = c.paths || {};
         delete c.paths[options.name];
-        c.paths[`@${nxJson.npmScope}/${options.projectDirectory}`] = [
+
+        if (c.paths[options.importPath]) {
+          throw new SchematicsException(
+            `You already have a library using the import path "${options.importPath}". Make sure to specify a unique one.`
+          );
+        }
+
+        // c.paths[`@${nxJson.npmScope}/${options.projectDirectory}`] = [
+        //   maybeJs(
+        //     options,
+        //     `${libsDir(host)}/${options.projectDirectory}/src/index.ts`
+        //   ),
+        // ];
+        c.paths[options.importPath] = [
           maybeJs(
             options,
             `${libsDir(host)}/${options.projectDirectory}/src/index.ts`
           ),
         ];
+
         return json;
       })(host, context);
     },
@@ -324,6 +344,15 @@ function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
     ? options.tags.split(',').map((s) => s.trim())
     : [];
 
+  // adjust the import path, especially for publishable
+  // libs which need to respect the NPM package scoping rules
+  let importPath = options.importPath;
+  if (!importPath) {
+    importPath = options.publishable
+      ? `@${getNpmScope(host)}/${projectName}`
+      : `@${getNpmScope(host)}/${projectDirectory}`;
+  }
+
   const normalized: NormalizedSchema = {
     ...options,
     fileName,
@@ -332,6 +361,7 @@ function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
     projectRoot,
     projectDirectory,
     parsedTags,
+    importPath,
   };
 
   if (options.appProject) {
@@ -359,12 +389,10 @@ function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
 }
 
 function updateLibPackageNpmScope(options: NormalizedSchema): Rule {
-  return (host: Tree) => {
-    return updateJsonInTree(`${options.projectRoot}/package.json`, (json) => {
-      json.name = `@${getNpmScope(host)}/${options.name}`;
-      return json;
-    });
-  };
+  return updateJsonInTree(`${options.projectRoot}/package.json`, (json) => {
+    json.name = options.importPath;
+    return json;
+  });
 }
 
 function maybeJs(options: NormalizedSchema, path: string): string {

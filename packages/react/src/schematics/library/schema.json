@@ -116,6 +116,10 @@
       "description": "Create a buildable library.",
       "alias": "buildable"
     },
+    "importPath": {
+      "type": "string",
+      "description": "The library name used to import it, like @myorg/my-awesome-lib"
+    },
     "component": {
       "type": "boolean",
       "description": "Generate a default component.",
