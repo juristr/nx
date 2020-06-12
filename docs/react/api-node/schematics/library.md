@@ -44,6 +44,12 @@ Type: `string`
 
 A directory where the lib is placed
 
+### importPath
+
+Type: `string`
+
+The library name used to import it, like @myorg/my-awesome-lib
+
 ### linter
 
 Default: `tslint`

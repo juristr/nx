@@ -56,6 +56,10 @@
       "description": "Create a publishable library.",
       "alias": "buildable"
     },
+    "importPath": {
+      "type": "string",
+      "description": "The library name used to import it, like @myorg/my-awesome-lib"
+    },
     "testEnvironment": {
       "type": "string",
       "enum": ["jsdom", "node"],

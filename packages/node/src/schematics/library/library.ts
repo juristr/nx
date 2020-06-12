@@ -26,6 +26,7 @@ import {
 } from '@nrwl/workspace';
 import { Schema } from './schema';
 import { libsDir } from '@nrwl/workspace/src/utils/ast-utils';
+import { validateNpmPackageName } from '@nrwl/workspace/src/utils/validate-npm-pkg-name';
 
 export interface NormalizedSchema extends Schema {
   name: string;
@@ -40,8 +41,15 @@ export default function (schema: NormalizedSchema): Rule {
   return (host: Tree, context: SchematicContext) => {
     const options = normalizeOptions(host, schema);
 
+    if (options.publishable === true) {
+      validateNpmPackageName(options.importPath);
+    }
+
     return chain([
-      externalSchematic('@nrwl/workspace', 'lib', schema),
+      externalSchematic('@nrwl/workspace', 'lib', {
+        ...schema,
+        importPath: options.importPath,
+      }),
       createFiles(options),
       updateTsConfig(options),
       addProject(options),
@@ -65,6 +73,15 @@ function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
     ? options.tags.split(',').map((s) => s.trim())
     : [];
 
+  // adjust the import path, especially for publishable
+  // libs which need to respect the NPM package scoping rules
+  let importPath = options.importPath;
+  if (!importPath) {
+    importPath = options.publishable
+      ? `@${defaultPrefix}/${projectName}`
+      : `@${defaultPrefix}/${projectDirectory}`;
+  }
+
   const normalized: NormalizedSchema = {
     ...options,
     prefix: defaultPrefix, // we could also allow customizing this
@@ -73,6 +90,7 @@ function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
     projectRoot,
     projectDirectory,
     parsedTags,
+    importPath,
   };
 
   return normalized;

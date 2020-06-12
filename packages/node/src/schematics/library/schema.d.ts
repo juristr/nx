@@ -9,5 +9,6 @@ export interface Schema {
   unitTestRunner: 'jest' | 'none';
   linter: Linter;
   publishable?: boolean;
+  importPath?: string;
   testEnvironment: 'jsdom' | 'node';
 }
