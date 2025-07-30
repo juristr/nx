@@ -1,4 +1,3 @@
-import { Dialog, Transition } from '@headlessui/react';
 import { PlayIcon } from '@heroicons/react/24/outline';
 import { AnimateValue, Marquee } from '@nx/nx-dev/ui-animations';
 import {
@@ -19,7 +18,7 @@ import { cx } from '@nx/nx-dev/ui-primitives';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ComponentProps, Fragment, ReactNode, useState } from 'react';
+import { ComponentProps, ReactNode, useState } from 'react';
 
 export function CiForMonorepos(): JSX.Element {
   return (
@@ -143,7 +142,8 @@ export function CornerBlur({
 }
 
 export function ApplicationCard(): JSX.Element {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  
   return (
     <div className="col-span-1 h-[600px] lg:col-span-4 lg:h-[600px]">
       <Card>
@@ -173,69 +173,38 @@ export function ApplicationCard(): JSX.Element {
             </span>
           </a>
         </div>
-        <picture className="absolute bottom-0 left-4 h-[345px] w-full overflow-hidden rounded-xl border border-slate-200 dark:bg-slate-800">
-          <Image
-            src="/images/home/nx-app-dashboard.avif"
-            alt="App screenshot: overview"
-            width={534}
-            height={370}
-            loading={'eager'}
-            priority={true}
-            unoptimized
-            className="h-full w-full object-cover object-left-top"
-          />
-          <div className="absolute inset-0 z-10 grid h-full w-full items-center justify-center">
-            <PlayButton onClick={() => setIsOpen(true)} />
-          </div>
-        </picture>
-      </Card>
-      {/*MODAL*/}
-      <Transition appear show={isOpen} as={Fragment}>
-        <Dialog
-          as="div"
-          open={isOpen}
-          onClose={() => setIsOpen(false)}
-          className="relative z-10"
-        >
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-black/25 backdrop-blur-sm" />
-          </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4 text-center">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 scale-100"
-                leaveTo="opacity-0 scale-95"
-              >
-                <Dialog.Panel className="relative w-auto transform overflow-hidden rounded-2xl border border-slate-600 text-left align-middle shadow-xl transition-all focus:outline-none dark:border-slate-800">
-                  <iframe
-                    width="812"
-                    height="468"
-                    src="https://www.youtube.com/embed/4VI-q943J3o?si=3tR-EkCKLfLvHYzL"
-                    title="YouTube video player"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                    className="max-w-full"
-                  />
-                </Dialog.Panel>
-              </Transition.Child>
+        
+        {!isVideoPlaying ? (
+          <picture className="absolute bottom-0 left-4 h-[345px] w-full overflow-hidden rounded-xl border border-slate-200 dark:bg-slate-800">
+            <Image
+              src="/images/home/nx-app-dashboard.avif"
+              alt="App screenshot: overview"
+              width={534}
+              height={370}
+              loading={'eager'}
+              priority={true}
+              unoptimized
+              className="h-full w-full object-cover object-left-top"
+            />
+            <div className="absolute inset-0 z-10 grid h-full w-full items-center justify-center">
+              <PlayButton onClick={() => setIsVideoPlaying(true)} />
             </div>
+          </picture>
+        ) : (
+          <div className="absolute bottom-0 left-4 h-[345px] w-full overflow-hidden rounded-xl border border-slate-200 dark:bg-slate-800">
+            <iframe
+              width="100%"
+              height="100%"
+              src="https://www.youtube.com/embed/4VI-q943J3o?si=3tR-EkCKLfLvHYzL&autoplay=1"
+              title="YouTube video player"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="h-full w-full rounded-xl"
+            />
           </div>
-        </Dialog>
-      </Transition>
+        )}
+      </Card>
     </div>
   );
 }
